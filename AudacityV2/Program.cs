@@ -53,7 +53,7 @@ namespace AudacityV2
             _Comms.RegisterCommands<Comms.Commands>();
 
             //testing resolve
-            await helper.Resolve();
+            //await helper.Resolve();
 
             await _Client.ConnectAsync();
             await Task.Delay(-1);
