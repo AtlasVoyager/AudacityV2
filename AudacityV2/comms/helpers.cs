@@ -1,5 +1,6 @@
 ﻿using Amazon.Runtime.Internal.Transform;
 using AudacityV2.AWS;
+using AudacityV2.Utils;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.Entities;
 using iText.Kernel.Pdf;
@@ -22,7 +23,12 @@ namespace AudacityV2.comms
         //};
 
         //public record BookMetadata(string Title, string Author, string UploadedBy);
-        private S3Helper s3 = new S3Helper();
+        private readonly S3Helper s3;
+
+        public Helpers(S3Helper s3Helper)
+        {
+            s3 = s3Helper ?? throw new ArgumentException(nameof(s3Helper));
+        }
 
         public static IEnumerable<(int, string)> SearchBooks(
         Dictionary<string, Metadata> books, string query)
@@ -66,78 +72,13 @@ namespace AudacityV2.comms
         {
             return new Metadata
             {
-                Title = GetPdfTitle(stuff.Url),
-                Author = GetPdfAuthor(stuff.Url),
+                Title = HelperUtils.GetPdfTitle(stuff.Url),
+                Author = HelperUtils.GetPdfAuthor(stuff.Url),
                 UploadedBy = ctx.User.ToString(),
                 UploadDate = DateTime.UtcNow,
                 FileName = stuff.FileName,
-                PageCount = GetPdfPageCount(stuff.Url)
+                PageCount = HelperUtils.GetPdfPageCount(stuff.Url)
             };
-        }
-        /// <summary>
-        /// Get the title of a PDF
-        /// </summary>
-        /// <param name="filePath"></param>
-        /// <returns></returns>
-        public string GetPdfTitle(string filePath)
-        {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-
-            var info = pdf.GetDocumentInfo();
-            return info.GetTitle().Replace('\'', '_') ?? "No title in metadata";
-        }
-        /// <summary>
-        /// Count the number of pages in a PDF
-        /// </summary>
-        /// <param name="filePath"></param>
-        /// <returns></returns>
-        public int GetPdfPageCount(string filePath)
-        {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-
-            var info = pdf.GetNumberOfPages();
-            return info;
-        }
-        /// <summary>
-        /// Get the author of a PDF
-        /// </summary>
-        /// <param name="filePath"></param>
-        /// <returns></returns>
-        public string GetPdfAuthor(string filePath)
-        {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-
-            var info = pdf.GetDocumentInfo();
-            return info.GetAuthor().Replace('\'', '_') ?? "No Author in metadata";
-        }
-        /// <summary>
-        /// Generate a unique Hash to ID the book
-        /// </summary>
-        /// <param name="fileStream"></param>
-        /// <returns></returns>
-        public string GenHash(Stream fileStream)
-        {
-            using var sha256 = System.Security.Cryptography.SHA256.Create();
-            var hash = sha256.ComputeHash(fileStream);
-            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-        }
-
-        public void EnsureDirExists(string downloadDir)
-        {
-            if (!Directory.Exists(downloadDir))
-            {
-                Directory.CreateDirectory(downloadDir);
-            }
-        }
-
-        // Get a full path for a file inside the download folder
-        public string GetDownloadPath(string fileName, string downloadDir)
-        {
-            EnsureDirExists(downloadDir);
-            return Path.Combine(downloadDir, fileName);
         }
 
         public async Task Resolve()
@@ -149,10 +90,12 @@ namespace AudacityV2.comms
             var index = await GetIndex();
             //list of stuff in the bucket
             var bucketStuff = await s3.BucketContent("my_books/");
+            var bucketFiles = bucketStuff.Where(x => x.EndsWith(".pdf")).ToList();
 
             Console.WriteLine($"Index count: {index.Count}, Bucket count: {bucketStuff.Count}");
             Console.WriteLine("index stuff:");
-            foreach (var item in index)
+
+          /*  foreach (var item in index)
             {
                 Console.WriteLine($"{item.Key} : {item.Value.Title}");
             }
@@ -161,8 +104,51 @@ namespace AudacityV2.comms
             foreach (var item in bucketStuff)
             {
                 Console.WriteLine(item);
+            }*/
+
+            //make a list of all the filenames in Index
+            var fileNames = index.Values
+                              .Select(x => Path.GetFileNameWithoutExtension(x.FileName))
+                              .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+
+            foreach (var item in bucketStuff.Where(x => x.EndsWith(".pdf")))
+            {
+                var genFileName = Path.GetFileNameWithoutExtension(item);
+
+               if(!fileNames.Contains(genFileName))
+                {
+                    //file doesn't exist in index, delete it
+                    Console.WriteLine($"File {genFileName} doesn't exist in index, deleting it");
+                    await s3.DeleteObjectAsync(item);
+                 }
+
             }
-            //throw new NotImplementedException();
+
+            //delete the orphaned indexes 
+            var bucketFileNames = bucketFiles.Select(x => Path.GetFileNameWithoutExtension(x))
+                                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var orphanedKeys = index.Where(kvp =>
+                                    !bucketFileNames.Contains(Path.GetFileNameWithoutExtension(kvp.Value.FileName)))
+                                    .Select(kvp => Path.GetFileNameWithoutExtension(kvp.Value.FileName))
+                                    .ToList();
+
+            foreach (var orphan in orphanedKeys)
+            {
+                Console.WriteLine($"Index entry {orphan} ({index[orphan].Title}) has no matching file in bucket. Removing from index.");
+                index.Remove(orphan);
+            }
+
+            // 6. Save cleaned index locally
+            string localIndexPath = HelperUtils.GetDownloadPath("bookIndex.json", "downloads/SHA256_hashes");
+            await File.WriteAllTextAsync(localIndexPath,
+                JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
+
+            // 7. Upload cleaned index back to S3
+            await s3.UploadAsync("bookIndex.json", localIndexPath, "SHA256_hashes");
+
+            Console.WriteLine($"Resolve complete. Removed {orphanedKeys.Count} orphaned index entries.");
         }
 
         public async Task<Dictionary<string, Metadata>> GetIndex()
@@ -171,7 +157,7 @@ namespace AudacityV2.comms
             Console.WriteLine(await s3.DownloadAsync("SHA256_hashes/bookIndex.json"));
             //read the index file
             //check if exists
-            EnsureDirExists("downloads/SHA256_hashes");
+            HelperUtils.EnsureDirExists("downloads/SHA256_hashes");
             using FileStream fs = File.OpenRead("downloads/SHA256_hashes/bookIndex.json");
             //string jsonString = await File.ReadAllTextAsync("downloads/SHA256_hashes/bookIndex.json");
             var data = await JsonSerializer.DeserializeAsync<Dictionary<string, Metadata>>(fs);

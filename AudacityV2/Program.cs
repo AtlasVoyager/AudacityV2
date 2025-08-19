@@ -17,11 +17,6 @@ namespace AudacityV2
 
         static async Task Main(string[] args)
         {
-            //init commands
-            var helper = new Helpers(); //new helper instance
-            //Comms.Commands commands = new Comms.Commands(helper);
-            var s3 = new S3Helper(); //new S3 helper instance
-
             var jReader = new JReader();
             await jReader.JRead(); //reads the config file and saves it as properties
 

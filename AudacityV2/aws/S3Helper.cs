@@ -1,46 +1,30 @@
 ﻿using Amazon;
-using Amazon.Runtime;
-using Amazon.Runtime.Internal.Endpoints.StandardLibrary;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Amazon.S3.Transfer;
-using AudacityV2.comms;
+using AudacityV2.Utils;
 using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Playwright;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace AudacityV2.AWS
 {
     public class S3Helper : IDisposable
     {
-        private Helpers helper = new Helpers();
         public static string BucketName = "atlasv-library";
-
         public static readonly RegionEndpoint region = RegionEndpoint.CACentral1;
         private static IAmazonS3 s3Client = new AmazonS3Client(region);
 
-        //Directory to store downloaded files
         public static readonly string DownloadDirectory = Path.Combine(AppContext.BaseDirectory, "downloads");
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="kName">Key name</param>
-        /// <param name="fPath">File path (Url or file Dir)</param>
-        /// <param name="online">is it a local or online file</param>
-        /// <returns></returns>
-        public async Task UploadAsync(string kName, string fPath)
+
+        public async Task UploadAsync(string kName, string fPath, string prefix)
         {
             try
             {
-                // Detect if fPath is a URL (starts with http or https)
                 bool isOnline = Uri.TryCreate(fPath, UriKind.Absolute, out var uriResult) &&
                                 (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
-
 
                 await using var memStream = new MemoryStream();
 
@@ -52,33 +36,33 @@ namespace AudacityV2.AWS
 
                     await using var inputStream = await response.Content.ReadAsStreamAsync();
                     await inputStream.CopyToAsync(memStream);
-                    memStream.Position = 0; // Reset for reading
-
-
-                    await inputStream.CopyToAsync(memStream);
-                    memStream.Position = 0; // Reset position for reading
+                    memStream.Position = 0;
                 }
                 else
                 {
                     byte[] fileBytes = await File.ReadAllBytesAsync(fPath);
                     memStream.Write(fileBytes, 0, fileBytes.Length);
-                    memStream.Position = 0; // Reset for reading
+                    memStream.Position = 0;
                 }
 
+                //Build full key with prefix
+                string fullKey = string.IsNullOrEmpty(prefix)
+                    ? kName.Replace("\\", "/")
+                    : $"{prefix.TrimEnd('/')}/{kName.Replace("\\", "/")}";
 
                 await s3Client.PutObjectAsync(new PutObjectRequest
                 {
                     BucketName = BucketName,
-                    Key = kName.Replace("\\", "/"),
+                    Key = fullKey,
                     InputStream = memStream,
-                    ContentType = GetContentType(fPath) // Assuming the content type is PDF
+                    ContentType = GetContentType(fPath)
+                    
                 });
             }
             catch (Exception ex)
             {
                 Console.WriteLine(ex);
             }
-
         }
 
         public async Task<string> DownloadAsync(string kName)
@@ -91,20 +75,37 @@ namespace AudacityV2.AWS
                     Key = kName
                 };
 
-                //get the object from aws
                 var response = await s3Client.GetObjectAsync(request);
 
-                await using var responseStream = response.ResponseStream; //get the response stream
-                await using var fileStream = File.Create(helper.GetDownloadPath(kName, DownloadDirectory));
+                string path = HelperUtils.GetDownloadPath(kName, DownloadDirectory);
+                await using var responseStream = response.ResponseStream;
+                await using var fileStream = File.Create(path);
 
-                await responseStream.CopyToAsync(fileStream); //copy the response stream to a memory stream
+                await responseStream.CopyToAsync(fileStream);
                 await fileStream.FlushAsync();
-                return helper.GetDownloadPath(kName, DownloadDirectory); //return the path to the file
+                return path;
             }
             catch (Exception ex)
             {
                 Console.WriteLine(ex);
                 return null;
+            }
+        }
+
+        public async Task DeleteObjectAsync(string kName)
+        {
+            try
+            {
+                var request = new DeleteObjectRequest
+                {
+                    BucketName = BucketName,
+                    Key = kName
+                };
+                await s3Client.DeleteObjectAsync(request);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting object {kName}: {ex}");
             }
         }
 
@@ -120,10 +121,9 @@ namespace AudacityV2.AWS
         private string GetContentType(string path)
         {
             var provider = new FileExtensionContentTypeProvider();
-            if (provider.TryGetContentType(path, out string contentType))
-                return contentType;
-
-            return "application/octet-stream"; // Default fallback
+            return provider.TryGetContentType(path, out string contentType)
+                ? contentType
+                : "application/octet-stream";
         }
 
         public async Task<List<string>> BucketContent(string prefix = "")
@@ -133,11 +133,11 @@ namespace AudacityV2.AWS
                 if (!string.IsNullOrEmpty(prefix) && !prefix.EndsWith("/"))
                     prefix += "/";
 
-               var list = await s3Client.GetAllObjectKeysAsync(
+                var list = await s3Client.GetAllObjectKeysAsync(
                     bucketName: BucketName,
                     prefix: prefix,
                     additionalProperties: new Dictionary<string, object>()
-                    );
+                );
 
                 return list.ToList();
             }
@@ -146,7 +146,6 @@ namespace AudacityV2.AWS
                 Console.WriteLine($"Error listing bucket contents: {ex}");
                 return new List<string>();
             }
-
         }
     }
 }

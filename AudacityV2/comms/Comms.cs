@@ -1,6 +1,7 @@
 ﻿using Amazon.Runtime.Internal.Endpoints.StandardLibrary;
 using AudacityV2.AWS;
 using AudacityV2.comms;
+using AudacityV2.Utils;
 using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
@@ -23,8 +24,9 @@ namespace AudacityV2.Comms
         [Command("upload")]
         public async Task UploadFile(CommandContext ctx)//ctx needs to be in every command
         {   //idk how else to do this so
-            Helpers helpers = new Helpers();
             S3Helper s3 = new S3Helper();
+            Helpers helpers = new Helpers(s3);
+
 
             if (ctx.Channel.Id != 1399218934229635072)
             {
@@ -42,12 +44,13 @@ namespace AudacityV2.Comms
                 }
                 if (attatchment.Count >= 1)
                 {
-                    if (attatchment.Count > 3)
+                    if (attatchment.Count > 10)
                     {
                         await ctx.Channel.SendMessageAsync("(σ｀д′)σ Okay that's too much!!!");
                         return;
                     }
 
+                    Dictionary<string, Metadata> data = await helpers.GetIndex();
                     //make a new task per book
                     foreach (var stuff in attatchment)
                     {
@@ -59,29 +62,22 @@ namespace AudacityV2.Comms
                         }
 
                         //get the title of the book
-                        string title = helpers.GetPdfTitle(stuff.Url);
+                        string title = HelperUtils.GetPdfTitle(stuff.Url);
                         //await ctx.Channel.SendMessageAsync($"(σ｀д′)σ book title: {title}");
                         //generate hash first
                         using var httpClient = new HttpClient();
                         var stream = await httpClient.GetStreamAsync(stuff.Url);
-                        string thisHash = helpers.GenHash(stream);
+                        string thisHash = HelperUtils.GenHash(stream);
 
                         //make make meta class
                         var thisMeta = helpers.MakeMetaData(ctx, stuff);
-                        // Replace this line:
-                        // Dictionary<string, Metadata> data = helpers.GetIndex(s3);
-                        // With the following line:
-                        Dictionary<string, Metadata> data = await helpers.GetIndex();
 
-                        //check if hash already exists
-                        if (data.Count > 0)
+                        if (data.ContainsKey(thisHash))
                         {
-                            if (data.ContainsKey(thisHash))
-                            {
-                                await ctx.Channel.SendMessageAsync($"(σ｀д′)σ This book already exists in the database! {data[thisHash].Title} by {data[thisHash].Author}");
-                                continue; //skip to the next attatchment
-                            }
+                            await ctx.Channel.SendMessageAsync($"(σ｀д′)σ This book already exists in the database! {data[thisHash].Title} by {data[thisHash].Author}");
+                            continue; //skip to the next attatchment
                         }
+
 
 
                         //add the new book to the index
@@ -92,13 +88,13 @@ namespace AudacityV2.Comms
                         //write the json back to the file
                         await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
                         //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
-                        await s3.UploadAsync("SHA256_hashes/bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"));
+                        await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
                         await ctx.Channel.SendMessageAsync($"(●'◡'●) Uploading {title} by {thisMeta.Author} with {thisMeta.PageCount} pages." +
                             $"\n==============================\n Uploaded by {thisMeta.UploadedBy} on {thisMeta.UploadDate}." +
-                            $"\n==============================\n Hash: {thisHash}");
+                            $"\n==============================\n Hash: {thisHash}\n\n");
 
                         //upload the book to s3
-                        await s3.UploadAsync(title + ".pdf", stuff.Url);
+                        await s3.UploadAsync(title + ".pdf", stuff.Url, "my_books");
 
                         //await s3.UploadAsync("SHA256_hashes/bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"));
 
@@ -109,12 +105,12 @@ namespace AudacityV2.Comms
             }
         }
 
-        [Command ("readToMe")]
+        [Command("readToMe")]
         public async Task ReadBook(CommandContext ctx, string searchTerm)
         {
             //search for the book
             using S3Helper s3 = new S3Helper();
-            Helpers helpers = new Helpers();
+            Helpers helpers = new Helpers(s3);
 
             //get the updated bookindex file
             Console.WriteLine(await s3.DownloadAsync("SHA256_hashes/bookIndex.json"));
@@ -125,8 +121,8 @@ namespace AudacityV2.Comms
 
         [Command("resolve")]
         public async Task Resolve(CommandContext ctx)
-        {            
-            Helpers helpers = new Helpers();
+        {
+            Helpers helpers = new Helpers(new S3Helper());
             await helpers.Resolve();
         }
 
