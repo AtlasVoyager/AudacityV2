@@ -11,6 +11,8 @@ namespace AudacityV2.Utils
     /// </summary>
     public static class HelperUtils
     {
+        private static readonly Dictionary<string, string> ActiveSelections = new();
+
         public static string GetPdfTitle(string filePath)
         {
             using var reader = new PdfReader(filePath);
@@ -52,5 +54,40 @@ namespace AudacityV2.Utils
             EnsureDirExists(downloadDir);
             return Path.Combine(downloadDir, fileName);
         }
+
+        public static IEnumerable<(int Index, string Hash, string Result)> SearchBooks(
+     Dictionary<string, Metadata> books, string query)
+        {
+            int index = 1;
+
+            // Title search
+            var titleMatches = books
+                .Where(kvp => kvp.Value.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(kvp => kvp.Value.Title)
+                .Select(kvp => (kvp.Key, $"{kvp.Value.Title} by {kvp.Value.Author}"));
+
+            // Author search
+            var authorMatches = books
+                .Where(kvp => kvp.Value.Author.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(kvp => kvp.Value.Author)
+                .Select(kvp => (kvp.Key, $"{kvp.Value.Title} by {kvp.Value.Author}"));
+
+            // UploadedBy search
+            var uploaderMatches = books
+                .Where(kvp => kvp.Value.UploadedBy.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(kvp => kvp.Value.UploadedBy)
+                .Select(kvp => (kvp.Key, $"{kvp.Value.Title} by {kvp.Value.Author}"));
+
+            // Combine results
+            var combined = titleMatches.Concat(authorMatches).Concat(uploaderMatches);
+
+            // Index them
+            foreach (var (hash, result) in combined)
+            {
+                yield return (index, hash, result);
+                index++;
+            }
+        }
+
     }
 }

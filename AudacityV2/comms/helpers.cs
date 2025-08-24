@@ -9,12 +9,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 
 namespace AudacityV2.comms
 {
     public class Helpers
     {
+
+
+
         //public static Dictionary<string, long> channelID = new Dictionary<string, long>
         //{
         //        { "general", 1397252659945148428 },
@@ -30,38 +34,6 @@ namespace AudacityV2.comms
             s3 = s3Helper ?? throw new ArgumentException(nameof(s3Helper));
         }
 
-        public static IEnumerable<(int, string)> SearchBooks(
-        Dictionary<string, Metadata> books, string query)
-        {
-            int index = 1;
-
-            // Title search
-            var titleMatches = books.Values
-                .Where(b => b.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(b => b.Title)
-                .Select(b => $"{b.Title} by {b.Author}");
-
-            // Author search
-            var authorMatches = books.Values
-                .Where(b => b.Author.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(b => b.Author)
-                .Select(b => $"{b.Title} by {b.Author}");
-
-            // UploadedBy search
-            var uploaderMatches = books.Values
-                .Where(b => b.UploadedBy.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(b => b.UploadedBy)
-                .Select(b => $"{b.Title} by {b.Author}");
-
-            // Combine & index results
-            var combined = titleMatches.Concat(authorMatches).Concat(uploaderMatches);
-
-            foreach (var result in combined)
-            {
-                yield return (index, result);
-                index++;
-            }
-        }
 
         public void ParseBook(DiscordAttachment stuff)
         {
@@ -89,66 +61,54 @@ namespace AudacityV2.comms
             //get the indexes
             var index = await GetIndex();
             //list of stuff in the bucket
-            var bucketStuff = await s3.BucketContent("my_books/");
-            var bucketFiles = bucketStuff.Where(x => x.EndsWith(".pdf")).ToList();
+            var indexedStuff = index.Values.Select(x => x.Title).OrderBy(x => x).ToList();
+            var bucketStuff = (await s3.BucketContent("my_books/")).Where(x => x.EndsWith(".pdf")).OrderBy(x => x).ToList();
+            List<string> alreadyValid = new List<string>();
 
-            Console.WriteLine($"Index count: {index.Count}, Bucket count: {bucketStuff.Count}");
-            Console.WriteLine("index stuff:");
-
-          /*  foreach (var item in index)
+            //check if the books in the bucket exist in the index
+            foreach (var book in indexedStuff)
             {
-                Console.WriteLine($"{item.Key} : {item.Value.Title}");
-            }
-
-            Console.WriteLine("bucket stuff:");
-            foreach (var item in bucketStuff)
-            {
-                Console.WriteLine(item);
-            }*/
-
-            //make a list of all the filenames in Index
-            var fileNames = index.Values
-                              .Select(x => Path.GetFileNameWithoutExtension(x.FileName))
-                              .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-
-            foreach (var item in bucketStuff.Where(x => x.EndsWith(".pdf")))
-            {
-                var genFileName = Path.GetFileNameWithoutExtension(item);
-
-               if(!fileNames.Contains(genFileName))
+                if (alreadyValid.Contains(book))
+                    continue; //skip already validated books
+                if (bucketStuff.Contains("my_books/" + book+".pdf"))
                 {
-                    //file doesn't exist in index, delete it
-                    Console.WriteLine($"File {genFileName} doesn't exist in index, deleting it");
-                    await s3.DeleteObjectAsync(item);
-                 }
-
+                    alreadyValid.Add(book);
+                }
+                else
+                {
+                    //book doesn't exist in the bucket, remove from index
+                    var itemToRemove = index.FirstOrDefault(x => x.Value.Title == book);
+                    if (itemToRemove.Key != null)
+                    {
+                        index.Remove(itemToRemove.Key);
+                        Console.WriteLine($"Removed {book} from index as it does not exist in the bucket.");
+                    }
+                }
             }
 
-            //delete the orphaned indexes 
-            var bucketFileNames = bucketFiles.Select(x => Path.GetFileNameWithoutExtension(x))
-                                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            //seriallize index
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string updatedJson = JsonSerializer.Serialize(index, options);
+            //write the json back to the file
+            await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
+            //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
+            await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
 
-            var orphanedKeys = index.Where(kvp =>
-                                    !bucketFileNames.Contains(Path.GetFileNameWithoutExtension(kvp.Value.FileName)))
-                                    .Select(kvp => Path.GetFileNameWithoutExtension(kvp.Value.FileName))
-                                    .ToList();
 
-            foreach (var orphan in orphanedKeys)
+            //deleting books that don't exist in the index from the bucket
+            foreach (var book in bucketStuff)
             {
-                Console.WriteLine($"Index entry {orphan} ({index[orphan].Title}) has no matching file in bucket. Removing from index.");
-                index.Remove(orphan);
+                var fileName = (book.Replace("my_books/", "")).Replace(".pdf","");
+                if (alreadyValid.Contains(fileName))
+                    continue; //skip already validated books
+                if (!indexedStuff.Contains(fileName))
+                {
+                    //book doesn't exist in the index, delete from bucket
+                    await s3.DeleteObjectAsync(book);
+                    Console.WriteLine($"Deleted {fileName} from bucket as it does not exist in the index.");
+                }
             }
 
-            // 6. Save cleaned index locally
-            string localIndexPath = HelperUtils.GetDownloadPath("bookIndex.json", "downloads/SHA256_hashes");
-            await File.WriteAllTextAsync(localIndexPath,
-                JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
-
-            // 7. Upload cleaned index back to S3
-            await s3.UploadAsync("bookIndex.json", localIndexPath, "SHA256_hashes");
-
-            Console.WriteLine($"Resolve complete. Removed {orphanedKeys.Count} orphaned index entries.");
         }
 
         public async Task<Dictionary<string, Metadata>> GetIndex()
@@ -165,5 +125,6 @@ namespace AudacityV2.comms
 
             return data ?? new Dictionary<string, Metadata>();
         }
+
     }
 }

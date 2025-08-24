@@ -91,7 +91,7 @@ namespace AudacityV2.Comms
                         await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
                         await ctx.Channel.SendMessageAsync($"(●'◡'●) Uploading {title} by {thisMeta.Author} with {thisMeta.PageCount} pages." +
                             $"\n==============================\n Uploaded by {thisMeta.UploadedBy} on {thisMeta.UploadDate}." +
-                            $"\n==============================\n Hash: {thisHash}\n\n");
+                            $"\n==============================\n Hash: {thisHash} \n                                   \n");
 
                         //upload the book to s3
                         await s3.UploadAsync(title + ".pdf", stuff.Url, "my_books");
@@ -153,6 +153,55 @@ namespace AudacityV2.Comms
                 await ctx.Channel.SendMessageAsync($"Link for {searchTerm}: \n==========================================\n♪(´▽｀) {url}\n==========================================");
 
             }
+
+        }
+
+        [Command("libsearch")]
+        public async Task LibSearch(CommandContext ctx, string searchTerm)
+        {
+            if (ctx.Channel.Id != 1399218934229635072)
+            {
+                await ctx.Channel.SendMessageAsync("(σ｀д′)σ This command can only be used in the uploads channel.");
+                return;
+            }
+            else
+            {
+                Helpers h = new Helpers(new S3Helper());
+
+                //get our index to help with our search. We need the index to get our list of books available
+                var index = await h.GetIndex();
+
+                //variable to store our list of results
+                var results = HelperUtils.SearchBooks(index, searchTerm);
+
+                foreach (var result in results)
+                {
+                    //result is a tuple of (index, hash, metadata)
+
+                    await ctx.Channel.SendMessageAsync($"Book {result.Index}: {result.Result}");
+                }
+            }
+        }
+
+        [Command("test")]
+        public async Task Test(CommandContext ctx)
+        {
+            //get index
+            var s3 = new S3Helper();
+            var helpers = new Helpers(s3);
+            var data = await helpers.GetIndex();
+            //add some empty objects to data
+            var rand = new Random();
+            for (int i = 0; i < 5; i++)
+                data.Add(rand.Next().ToString(), new Metadata());
+
+            //update the index file
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string updatedJson = JsonSerializer.Serialize(data, options);
+            //write the json back to the file
+            await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
+            //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
+            await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
 
         }
 
