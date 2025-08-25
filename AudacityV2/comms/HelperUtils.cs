@@ -11,8 +11,8 @@ namespace AudacityV2.Utils
     /// </summary>
     public static class HelperUtils
     {
-        private static readonly Dictionary<string, string> ActiveSelections = new();
-
+        /* private static readonly Dictionary<string, string> ActiveSelections = new();
+ */
         public static string GetPdfTitle(string filePath)
         {
             using var reader = new PdfReader(filePath);
@@ -79,7 +79,7 @@ namespace AudacityV2.Utils
                 .Select(kvp => (kvp.Key, $"{kvp.Value.Title} by {kvp.Value.Author}"));
 
             // Combine results
-            var combined = titleMatches.Concat(authorMatches).Concat(uploaderMatches);
+            var combined = titleMatches.Concat(authorMatches).Concat(uploaderMatches).DistinctBy(x => x.Key);
 
             // Index them
             foreach (var (hash, result) in combined)

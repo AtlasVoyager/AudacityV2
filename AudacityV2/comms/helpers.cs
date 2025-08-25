@@ -5,6 +5,7 @@ using DSharpPlus.CommandsNext;
 using DSharpPlus.Entities;
 using iText.Kernel.Pdf;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -17,7 +18,8 @@ namespace AudacityV2.comms
     public class Helpers
     {
 
-
+        private readonly ConcurrentDictionary<ulong, ReadOrder> readOrders = new(); //our processing queue
+        private readonly ConcurrentDictionary<ulong, List<BookMenuItem>> activeMenus = new(); //temp queue for active menus
 
         //public static Dictionary<string, long> channelID = new Dictionary<string, long>
         //{

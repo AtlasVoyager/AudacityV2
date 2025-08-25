@@ -114,6 +114,7 @@ namespace AudacityV2.Comms
 
             //get the updated bookindex file
             Console.WriteLine(await s3.DownloadAsync("SHA256_hashes/bookIndex.json"));
+            
 
 
             return;
