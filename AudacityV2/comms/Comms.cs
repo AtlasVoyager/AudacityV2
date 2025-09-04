@@ -49,20 +49,21 @@ namespace AudacityV2.Comms
                         await ctx.Channel.SendMessageAsync("(σ｀д′)σ Okay that's too much!!!");
                         return;
                     }
-
-                    Dictionary<string, Metadata> data = await helpers.GetIndex();
+                    
+                    Dictionary<string, Metadata> data = await helpers.GetIndexAsync();
                     //make a new task per book
                     foreach (var stuff in attatchment)
                     {
                         //I only want pdfs for now
-                        if (!stuff.MediaType.Contains("pdf"))
+                        if (!stuff.MediaType.Contains("epub"))
                         {
-                            await ctx.Channel.SendMessageAsync("(σ｀д′)σ The attatchment needs to be a pdf");
+                            await ctx.Channel.SendMessageAsync("(σ｀д′)σ The attatchment needs to be a pdf or epub");
                             continue; //should this be continue?
                         }
 
+
                         //get the title of the book
-                        string title = HelperUtils.GetPdfTitle(stuff.Url);
+                        string title = HelperUtils.GetEpubTitle(stuff.Url);
                         //await ctx.Channel.SendMessageAsync($"(σ｀д′)σ book title: {title}");
                         //generate hash first
                         using var httpClient = new HttpClient();
@@ -89,7 +90,7 @@ namespace AudacityV2.Comms
                         await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
                         //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
                         await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
-                        await ctx.Channel.SendMessageAsync($"(●'◡'●) Uploading {title} by {thisMeta.Author} with {thisMeta.PageCount} pages." +
+                        await ctx.Channel.SendMessageAsync($"(●'◡'●) Uploading {title} by {thisMeta.Author} with {thisMeta.ChapterCount} chapters." +
                             $"\n==============================\n Uploaded by {thisMeta.UploadedBy} on {thisMeta.UploadDate}." +
                             $"\n==============================\n Hash: {thisHash} \n                                   \n");
 
@@ -106,7 +107,7 @@ namespace AudacityV2.Comms
         }
 
         [Command("readToMe")]
-        public async Task ReadBook(CommandContext ctx, string searchTerm)
+        public async Task ReadBook(CommandContext ctx, string? searchTerm = null)
         {
             //search for the book
             using S3Helper s3 = new S3Helper();
@@ -114,7 +115,43 @@ namespace AudacityV2.Comms
 
             //get the updated bookindex file
             Console.WriteLine(await s3.DownloadAsync("SHA256_hashes/bookIndex.json"));
-            
+
+            //if the book isn't in the ReadOrders Dictionary then ask for search term
+            var orderExists = ReadManager.Instance.readOrders.TryGetValue(ctx.User.Id, out _);
+            if (!orderExists && searchTerm == null)
+            {
+                await ctx.Channel.SendMessageAsync("(σ｀д′)σ Your order doesn't exist. Please input a search term.");
+                return;
+            }
+            else if (orderExists && searchTerm != null)
+            {
+                await ctx.Channel.SendMessageAsync("(σ｀д′)σ Your order already exists. Please cancel your previous order.");
+                return;
+            }
+            else if (!orderExists && searchTerm != null)
+            {
+                if (!int.TryParse(searchTerm, out int bookNumber))
+                {
+                    await ctx.Channel.SendMessageAsync("(σ｀д′)σ Please enter a valid book number from the search results.");
+                    return;
+                }
+                //make a read order for the book
+                var debug = ReadManager.Instance.SelectBook(ctx.User.Id, bookNumber);
+
+                //process the read orders
+                if (debug)
+                {
+                    //parse the book // look up the read order to see if this works
+                    await ctx.Channel.SendMessageAsync($"(●'◡'●) Processing your request");
+                    var x = ReadManager.Instance.readOrders[ctx.User.Id];
+
+                }
+            }
+            else
+            {
+                //order exists and no search term
+                var x = ReadManager.Instance.readOrders[ctx.User.Id];
+            }
 
 
             return;
@@ -170,7 +207,7 @@ namespace AudacityV2.Comms
                 Helpers h = new Helpers(new S3Helper());
 
                 //get our index to help with our search. We need the index to get our list of books available
-                var index = await h.GetIndex();
+                var index = await h.GetIndexAsync();
 
                 //variable to store our list of results
                 var results = HelperUtils.SearchBooks(index, searchTerm);
@@ -180,6 +217,9 @@ namespace AudacityV2.Comms
                     //result is a tuple of (index, hash, metadata)
 
                     await ctx.Channel.SendMessageAsync($"Book {result.Index}: {result.Result}");
+
+                    //store the menu. We store the userID and hash of the book. The hash would be used to look up the book later
+                    ReadManager.Instance.SaveMenu(ctx.User.Id, results.Select(r => r.Hash).ToList());
                 }
             }
         }
@@ -190,7 +230,7 @@ namespace AudacityV2.Comms
             //get index
             var s3 = new S3Helper();
             var helpers = new Helpers(s3);
-            var data = await helpers.GetIndex();
+            /*var data = await helpers.GetIndexAsync();
             //add some empty objects to data
             var rand = new Random();
             for (int i = 0; i < 5; i++)
@@ -202,7 +242,14 @@ namespace AudacityV2.Comms
             //write the json back to the file
             await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
             //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
-            await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
+            await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");*/
+
+           /* //test for make books
+            await helpers.MakeBook("tst_001");
+            await helpers.MakeBook("tst_002");
+            await helpers.MakeBook("tst_003");
+            await helpers.MakeBook("tst_004");
+            await helpers.MakeBook("tst_005");*/
 
         }
 

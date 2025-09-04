@@ -19,6 +19,13 @@ namespace AudacityV2.AWS
 
         public static readonly string DownloadDirectory = Path.Combine(AppContext.BaseDirectory, "downloads");
 
+        /// <summary>
+        /// for local and online files (HTTP/HTTPS) that we want to upload to S3
+        /// </summary>
+        /// <param name="kName"></param>
+        /// <param name="fPath"></param>
+        /// <param name="prefix"></param>
+        /// <returns></returns>
         public async Task UploadAsync(string kName, string fPath, string prefix)
         {
             try
@@ -58,6 +65,42 @@ namespace AudacityV2.AWS
                     ContentType = GetContentType(fPath)
                     
                 });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        }
+
+       /// <summary>
+       /// Uploads the specified content to an S3 bucket using the provided key and prefix.
+       /// </summary>
+       /// <remarks>This method uploads the content to the S3 bucket specified by the <c>BucketName</c>
+       /// property. Ensure that the <c>s3Client</c> is properly configured and authenticated before calling this
+       /// method.</remarks>
+       /// <param name="fileStuff">A tuple containing the key and prefix for the object to be uploaded. The <c>key</c> represents the unique
+       /// identifier for the object, and the <c>prefix</c> represents the folder or path within the bucket.</param>
+       /// <param name="content">The content to be uploaded as a string. The content is stored with a content type of <c>application/json</c>.</param>
+       /// <returns>A task that represents the asynchronous upload operation.</returns>
+        public async Task UploadAsync((string key, string prefix) fileStuff, string content)
+        {
+            try
+            {
+                //Build full key with prefix
+                string fullKey = string.IsNullOrEmpty(fileStuff.prefix)
+                    ? fileStuff.key.Replace("\\", "/")
+                    : $"{fileStuff.prefix.TrimEnd('/')}/{fileStuff.key.Replace("\\", "/")}";
+
+                var request = new PutObjectRequest
+                {
+                    BucketName = BucketName,
+                    Key = fullKey,
+                    ContentBody = content,
+                    ContentType = "application/json"
+                   
+                };
+
+                await s3Client.PutObjectAsync(request);
             }
             catch (Exception ex)
             {

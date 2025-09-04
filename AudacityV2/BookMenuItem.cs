@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace AudacityV2
 {
-    internal class BookMenuItem
+    public class BookMenuItem
     {
         //identifying the book
         public int Index { get; set; }

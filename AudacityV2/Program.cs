@@ -15,14 +15,15 @@ namespace AudacityV2
         private static DiscordClient _Client { get; set; }
         private static CommandsNextExtension _Comms { get; set; }
 
+
+       
+        
+
         static async Task Main(string[] args)
         {
             var jReader = new JReader();
             await jReader.JRead(); //reads the config file and saves it as properties
-
-
-         
-
+            
             //config for our discord clone
             var discordConfig = new DiscordConfiguration()
             {

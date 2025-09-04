@@ -1,7 +1,10 @@
 ﻿using iText.Kernel.Pdf;
 using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
+using VersOne.Epub;
 
 namespace AudacityV2.Utils
 {
@@ -11,29 +14,24 @@ namespace AudacityV2.Utils
     /// </summary>
     public static class HelperUtils
     {
-        /* private static readonly Dictionary<string, string> ActiveSelections = new();
- */
-        public static string GetPdfTitle(string filePath)
+        //storage for the books in use once the queue is empty delete read order
+        public static Dictionary<ReadOrder, ConcurrentQueue<string>> ActiveSelections = new();
+
+        public static string GetEpubTitle(string filePath)
         {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-            var info = pdf.GetDocumentInfo();
-            return info.GetTitle()?.Replace('\'', '_') ?? "No title in metadata";
+            EpubBook book = EpubReader.ReadBook(filePath);
+            return string.IsNullOrWhiteSpace(book.Title) ? "No title in metadata" : book.Title.Replace('\'', '_');
         }
 
-        public static int GetPdfPageCount(string filePath)
-        {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-            return pdf.GetNumberOfPages();
-        }
 
-        public static string GetPdfAuthor(string filePath)
+        public static string GetEpubAuthor(string filePath)
         {
-            using var reader = new PdfReader(filePath);
-            using var pdf = new PdfDocument(reader);
-            var info = pdf.GetDocumentInfo();
-            return info.GetAuthor()?.Replace('\'', '_') ?? "No Author in metadata";
+            EpubBook book = EpubReader.ReadBook(filePath);
+            if (book.AuthorList != null && book.AuthorList.Count > 0)
+            {
+                return string.Join(", ", book.AuthorList).Replace('\'', '_');
+            }
+            return "No Author in metadata";
         }
 
         public static string GenHash(Stream fileStream)
@@ -42,7 +40,6 @@ namespace AudacityV2.Utils
             var hash = sha256.ComputeHash(fileStream);
             return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
         }
-
         public static void EnsureDirExists(string dir)
         {
             if (!Directory.Exists(dir))
@@ -89,5 +86,17 @@ namespace AudacityV2.Utils
             }
         }
 
+        public static int GetEpubChapterCount(string filePath)
+        {
+            // Read the EPUB
+            var book = EpubReader.ReadBook(filePath);
+            // EPUB has a navigation list (like a Table of Contents)
+            if (book.Navigation != null && book.Navigation.Count > 0)
+            {
+                return book.Navigation.Count;
+            }
+            // Fallback: if no nav, use reading order
+            return book.ReadingOrder.Count;
+        }
     }
 }
