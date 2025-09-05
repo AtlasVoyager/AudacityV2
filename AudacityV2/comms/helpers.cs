@@ -26,6 +26,7 @@ namespace AudacityV2.comms
         public Helpers(S3Helper s3Helper)
         {
             s3 = s3Helper ?? throw new ArgumentException(nameof(s3Helper));
+
         }
 
         public async void ProcessBookAsync(ReadOrder? r)
@@ -56,16 +57,6 @@ namespace AudacityV2.comms
                 return false;
             var localPath = await s3.DownloadAsync(filePath);
             //NOW we can parse the book
-            //idk if I should make this it's own thing
-            var parsedBook = new
-            {
-                title = filePath.Replace(".pdf", ""),
-                tableOfContents = new { },
-                snippets = new Dictionary<int, string>()
-
-            };
-
-
             //load the EPub file
             EpubBook book = EpubReader.ReadBook(localPath);
 
