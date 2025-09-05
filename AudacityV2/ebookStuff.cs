@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace AudacityV2
+﻿namespace AudacityV2
 {
-    public class parsedEBookTemplate
+    public class ParsedEBookTemplate
     {
         public string Title { get; set; } = string.Empty;
-        public Dictionary<ebookNavStuff, List<string>> snippets { get; set; } = new();
+        public Dictionary<EbookNavStuff, List<string>> snippets { get; set; } = new();
     }
 
-    public class ebookNavStuff
+    public class EbookNavStuff
     {
         public string chapterKey { get; set; } = string.Empty;
         public string chapterTitle { get; set; } = string.Empty;

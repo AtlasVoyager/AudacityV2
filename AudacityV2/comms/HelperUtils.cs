@@ -1,8 +1,10 @@
-﻿using iText.Kernel.Pdf;
+﻿using HtmlAgilityPack;
+using iText.Kernel.Pdf;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Security.Cryptography;
 using VersOne.Epub;
 
@@ -98,5 +100,56 @@ namespace AudacityV2.Utils
             // Fallback: if no nav, use reading order
             return book.ReadingOrder.Count;
         }
+
+        public static string ExtractPlainText(string htmlContent)
+        {
+            if (string.IsNullOrWhiteSpace(htmlContent))
+                return string.Empty;
+
+            HtmlDocument doc = new HtmlDocument();
+            doc.LoadHtml(htmlContent);
+
+            string plainText = doc.DocumentNode.InnerText;
+            plainText = WebUtility.HtmlDecode(plainText);
+
+            return plainText.Trim();
+        }
+
+        public static IEnumerable<string> SplitTextByLength(
+       string text,
+       int chunkSize,
+       int maxChunkSize = int.MaxValue)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                yield break;
+
+            int index = 0;
+            while (index < text.Length)
+            {
+                int minEnd = index + chunkSize;
+                int hardEnd = Math.Min(index + maxChunkSize, text.Length);
+
+                if (minEnd >= text.Length)
+                {
+                    // Last chunk
+                    yield return text.Substring(index).Trim();
+                    yield break;
+                }
+
+                // Find the next space after minEnd, but before hardEnd
+                int nextSpace = text.IndexOf(' ', minEnd);
+                if (nextSpace == -1 || nextSpace > hardEnd)
+                {
+                    // No suitable space, force cut at hardEnd
+                    nextSpace = hardEnd;
+                }
+
+                int length = nextSpace - index;
+                yield return text.Substring(index, length).Trim();
+
+                index = nextSpace + 1; // skip the space
+            }
+        }
+
     }
 }

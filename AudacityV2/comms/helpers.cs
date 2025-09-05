@@ -60,12 +60,45 @@ namespace AudacityV2.comms
             //load the EPub file
             EpubBook book = EpubReader.ReadBook(localPath);
 
-            //get table of contents
-            if (book.Navigation.Count > 0)
+            var thisEbook = new ParsedEBookTemplate
             {
+                Title = book.Title,
+                snippets = new() //empty for now
+            };
+
+            //get stuff from the book.ReadingOrder. Need to populate parsedEBookTemplate
+            if (book.Navigation == null) return false;
+
+
+            foreach (var item in book.Navigation)
+            {
+                if (item.Link != null)
+                {
+                    var key = item.Link.ContentFilePath;
+                    string cleanContent = "";
+                    var currENavStuff = new EbookNavStuff
+                    {
+                        chapterKey = key, //the key to the chapter
+                        chapterTitle = item.Title //chapter title
+                    };
+                    thisEbook.snippets[currENavStuff].Add(cleanContent);
+
+                    //casting to text content file cuz it was a naughty biytch and didn't want to be one
+                    var thing = book.Content.AllFiles.Local.Where(x => x.Key.Equals(key)).FirstOrDefault() as EpubLocalTextContentFile;
+                    var chunk = HelperUtils.ExtractPlainText(thing.Content);
+                    var chunkMini = HelperUtils.SplitTextByLength(chunk, 60);//not setting the max so there is only one place for it to be changed
+                    foreach (var c in chunkMini)
+                    {
+                        thisEbook.snippets[currENavStuff].Add(c);
+                    }
+                }
+                else return false;
+                // Optionally, handle the case where item.Link is null if needed
             }
 
-            //cut the book into snippets
+            Console.WriteLine(thisEbook.ToString());
+
+
 
 
 
@@ -78,6 +111,8 @@ namespace AudacityV2.comms
         {
 
         }
+
+
 
         public Metadata MakeMetaData(CommandContext ctx, DiscordAttachment stuff)
         {

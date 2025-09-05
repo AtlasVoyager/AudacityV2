@@ -12,6 +12,7 @@
     <PackageReference Include="AWSSDK.S3" Version="4.0.6.2" />
     <PackageReference Include="DSharpPlus" Version="4.5.1" />
     <PackageReference Include="DSharpPlus.CommandsNext" Version="4.5.1" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.12.2" />
     <PackageReference Include="itext" Version="9.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.StaticFiles" Version="2.3.0" />
     <PackageReference Include="Microsoft.Playwright" Version="1.54.0" />
