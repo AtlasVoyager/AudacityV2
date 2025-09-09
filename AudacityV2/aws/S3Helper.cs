@@ -1,13 +1,17 @@
 ﻿using Amazon;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.S3.Transfer;
 using AudacityV2.Utils;
 using Microsoft.AspNetCore.StaticFiles;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
+
 
 namespace AudacityV2.AWS
 {
@@ -20,13 +24,53 @@ namespace AudacityV2.AWS
         public static readonly string DownloadDirectory = Path.Combine(AppContext.BaseDirectory, "downloads");
 
         /// <summary>
+        /// Turns everything into a stream. Accepts Local files, URL's, text, bytes, and json 
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        private static async Task<Stream> ToStreamAsync(object input)
+        {
+            switch (input)
+            {
+                case Stream s:
+                    return s;
+
+                case string filePath when File.Exists(filePath):
+                    return File.OpenRead(filePath);
+
+                case string url when Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps):
+                    {
+                        using var httpClient = new HttpClient();
+                        var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                        response.EnsureSuccessStatusCode();
+
+                        var memStream = new MemoryStream();
+                        await response.Content.CopyToAsync(memStream);
+                        memStream.Position = 0;
+                        return memStream;
+                    }
+
+                case string text:
+                    return new MemoryStream(Encoding.UTF8.GetBytes(text));
+
+                case byte[] bytes:
+                    return new MemoryStream(bytes);
+
+                default:
+                    string json = JsonSerializer.Serialize(input);
+                    return new MemoryStream(Encoding.UTF8.GetBytes(json));
+            }
+        }
+
+        /// <summary>
         /// for local and online files (HTTP/HTTPS) that we want to upload to S3
         /// </summary>
         /// <param name="kName"></param>
         /// <param name="fPath"></param>
         /// <param name="prefix"></param>
         /// <returns></returns>
-        public async Task UploadAsync(string kName, string fPath, string prefix)
+        /*public async Task UploadAsync(string kName, string fPath, string prefix)
         {
             try
             {
@@ -70,19 +114,35 @@ namespace AudacityV2.AWS
             {
                 Console.WriteLine(ex);
             }
+        }*/
+
+        /// <summary>
+        /// Uploads something to my S3 bucket. 
+        /// </summary>
+        /// <param name="keyName">Name the file will take in the s3 bucket</param>
+        /// <param name="objStream"></param>
+        /// <param name="prefix"></param>
+        /// <returns></returns>
+        public async Task UploadAsync(string keyName, object src, string prefix = "")
+        {
+            using var stream = await ToStreamAsync(src); // your auto-stream converter
+            var transfer = new TransferUtility(s3Client);
+            await transfer.UploadAsync(stream, BucketName, prefix + keyName);
+
         }
 
-       /// <summary>
-       /// Uploads the specified content to an S3 bucket using the provided key and prefix.
-       /// </summary>
-       /// <remarks>This method uploads the content to the S3 bucket specified by the <c>BucketName</c>
-       /// property. Ensure that the <c>s3Client</c> is properly configured and authenticated before calling this
-       /// method.</remarks>
-       /// <param name="fileStuff">A tuple containing the key and prefix for the object to be uploaded. The <c>key</c> represents the unique
-       /// identifier for the object, and the <c>prefix</c> represents the folder or path within the bucket.</param>
-       /// <param name="content">The content to be uploaded as a string. The content is stored with a content type of <c>application/json</c>.</param>
-       /// <returns>A task that represents the asynchronous upload operation.</returns>
-        public async Task UploadAsync((string key, string prefix) fileStuff, string content)
+
+        /// <summary>
+        /// Uploads the specified content to an S3 bucket using the provided key and prefix.
+        /// </summary>
+        /// <remarks>This method uploads the content to the S3 bucket specified by the <c>BucketName</c>
+        /// property. Ensure that the <c>s3Client</c> is properly configured and authenticated before calling this
+        /// method.</remarks>
+        /// <param name="fileStuff">A tuple containing the key and prefix for the object to be uploaded. The <c>key</c> represents the unique
+        /// identifier for the object, and the <c>prefix</c> represents the folder or path within the bucket.</param>
+        /// <param name="content">The content to be uploaded as a string. The content is stored with a content type of <c>application/json</c>.</param>
+        /// <returns>A task that represents the asynchronous upload operation.</returns>
+/*        public async Task UploadAsync((string key, string prefix) fileStuff, string content)
         {
             try
             {
@@ -107,7 +167,7 @@ namespace AudacityV2.AWS
                 Console.WriteLine(ex);
             }
         }
-
+*/
         public async Task<string> DownloadAsync(string kName)
         {
             try

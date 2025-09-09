@@ -144,7 +144,7 @@ namespace AudacityV2.comms
             {
                 if (alreadyValid.Contains(book))
                     continue; //skip already validated books
-                if (bucketStuff.Contains("my_books/" + book+".pdf"))
+                if (bucketStuff.Contains("my_books/" + book + ".pdf"))
                 {
                     alreadyValid.Add(book);
                 }
@@ -212,7 +212,7 @@ namespace AudacityV2.comms
             var options = new JsonSerializerOptions { WriteIndented = true };
             string json = JsonSerializer.Serialize(data, options);
 
-            await s3.UploadAsync((hash + ".json", "parsed_books"), json);
+            await s3.UploadAsync(hash + ".json", json, "parsed_books");
 
         }
 

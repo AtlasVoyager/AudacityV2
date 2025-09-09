@@ -89,13 +89,13 @@ namespace AudacityV2.Comms
                         //write the json back to the file
                         await File.WriteAllTextAsync("downloads/SHA256_hashes/bookIndex.json", updatedJson);
                         //upload the updated index file Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json")
-                        await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes");
+                        await s3.UploadAsync("bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"), "SHA256_hashes/");
                         await ctx.Channel.SendMessageAsync($"(●'◡'●) Uploading {title} by {thisMeta.Author} with {thisMeta.ChapterCount} chapters." +
                             $"\n==============================\n Uploaded by {thisMeta.UploadedBy} on {thisMeta.UploadDate}." +
                             $"\n==============================\n Hash: {thisHash} \n                                   \n");
 
                         //upload the book to s3
-                        await s3.UploadAsync(title + ".pdf", stuff.Url, "my_books");
+                        await s3.UploadAsync(title + ".pdf", stuff.Url, "my_books/");
 
                         //await s3.UploadAsync("SHA256_hashes/bookIndex.json", Path.Combine(AppContext.BaseDirectory, "downloads/SHA256_hashes/bookIndex.json"));
 
